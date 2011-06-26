@@ -1,0 +1,6 @@
+LIBRARY		udf_example
+VERSION		1.0
+EXPORTS
+  metaphon_init
+  metaphon_deinit
+  metaphon
