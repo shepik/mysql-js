@@ -16,13 +16,15 @@
 
 #include <iostream>
 #include <vector>
-
 #include <my_global.h>
 #include <my_sys.h>
 #include <m_string.h>		//* To get strmov() *
 #include <string.h>
 #include <mysql.h>
 #include <ctype.h>
+
+//#define MYSQL_SERVER 1  
+//#include <mysql_priv.h>
 
 extern "C" {
 	my_bool execute_js_init(UDF_INIT *initid, UDF_ARGS *args, char *message);
@@ -77,57 +79,48 @@ using namespace v8;
 struct JsContext {
 	Isolate *isolate;
 	Persistent<Context> context;
-	Handle<Script> script;
-	Handle<Function> function;
+	Persistent<Script> script;
+	Persistent<Function> function;
+	Persistent<Object> gobject;
 };
 
 my_bool execute_js_init(UDF_INIT *initid, UDF_ARGS *args, char *message)
 {
-  if (args->arg_count < 1 || args->arg_type[0] != STRING_RESULT)
-  {
-    strcpy(message,"execute_js: Wrong number of arguments");
-    return 1;
-  }
-  for (int i=0; i<args->arg_count; i++) if (args->arg_type[i]!=STRING_RESULT) {
-    strcpy(message,"execute_js: Wrong argument type");
-    return 1;
-  }
-  initid->max_length=1024;
+	if (args->arg_count < 1 || args->arg_type[0] != STRING_RESULT) {
+		strcpy(message,"execute_js: Wrong number of arguments");
+		return 1;
+	}
+	for (int i=0; i<args->arg_count; i++) if (args->arg_type[i]!=STRING_RESULT) {
+		strcpy(message,"execute_js: Wrong argument type");
+		return 1;
+	}
+	if (!args->args[0]) {
+		strcpy(message,"execute_js: First argument must be constant");
+		return 1;
+	}
+	initid->max_length=1024;
 
-  JsContext *ctx = new JsContext();
-  initid->ptr = (char*)ctx;
-  ctx->isolate = Isolate::New();
-  ctx->isolate->Enter();
-  {
-  		HandleScope handle_scope;
+	JsContext *ctx = new JsContext();
+	initid->ptr = (char*)ctx;
+	ctx->isolate = Isolate::New();
+	ctx->isolate->Enter();
+	{
+		HandleScope handle_scope;
 		//V8::GetCurrentThreadId();
-		//Isolate *t = Isolate::GetCurrent();
-		//internal::Isolate * i = (internal::Isolate *) t;
-		//fprintf(stderr,itoa(i->thread_id().ToInteger()));
 
-		fprintf(stderr,"ASDASDADS - i2\n");
-
-		// Create a new context.
 		ctx->context = Context::New();
 		
-		Handle<Context> hc = ctx->context;
-		hc->Enter();
-		
-		//Context::Scope context_scope(ctx->context);
+		Context::Scope context_scope(ctx->context);
 
-		fprintf(stderr,"ASDASDADS - i3\n");
-
-		// Create a string containing the JavaScript source code.
 		Handle<String> source = String::New(args->args[0],args->lengths[0]);
-		ctx->script = Script::Compile(source);
+		ctx->script = Persistent<Script>::New( Script::New(source) );
 		if (args->arg_count>1) {
-			ctx->function = Handle<Function>::Cast(ctx->context->Global()->Get(String::New(args->args[1],args->lengths[1])));
+			ctx->gobject = Persistent<Object>::New( ctx->context->Global() );
+			ctx->script->Run();
+			ctx->function = Persistent<Function>::New( Handle<Function>::Cast(ctx->gobject->Get(String::New(args->args[1],args->lengths[1]))) );
 		}
-		
-		fprintf(stderr,"ASDASDADS - i5\n");
-
-  }
-  return 0;
+	}
+	return 0;
 }
 
 /****************************************************************************
@@ -141,8 +134,8 @@ my_bool execute_js_init(UDF_INIT *initid, UDF_ARGS *args, char *message)
 void execute_js_deinit(UDF_INIT *initid)
 {
 	JsContext *ctx = (JsContext *)initid->ptr;
-	Handle<Context> hc = ctx->context;
-	hc->Exit();
+	//Handle<Context> hc = ctx->context;
+	//hc->Exit();
 	ctx->context.Dispose();
 	ctx->isolate->Exit();
 	ctx->isolate->Dispose();
@@ -174,39 +167,23 @@ char *execute_js(UDF_INIT *initid __attribute__((unused)),
 {
 	JsContext *ctx = (JsContext *)initid->ptr;
 	HandleScope handle_scope;
-
-	fprintf(stderr,"ASDASDADS - e1\n");
-
-//	Context::Scope context_scope(ctx->context);	
-	// Create a string containing the JavaScript source code.
-	Handle<String> source = String::New(args->args[0],args->lengths[0]);
-	ctx->script = Script::Compile(source);
-	
+	Context::Scope context_scope(ctx->context);	
 	Handle<Value> jsresult;
 	if (args->arg_count>1) {
-		fprintf(stderr,"ASDASDADS - e2\n");
 		Handle<Value> fargs[args->arg_count-2];
 		for (int i=2;i<args->arg_count;i++) {
 			fargs[i-2] = String::New(args->args[i],args->lengths[i]);
 		}
-		fprintf(stderr,"ASDASDADS - e3\n");
-		jsresult = ctx->script->Run();
-		fprintf(stderr,"ASDASDADS - e4\n");
-		ctx->function = Handle<Function>::Cast(ctx->context->Global()->Get(String::New(args->args[1],args->lengths[1])));
-		fprintf(stderr,"ASDASDADS - e5\n");
 		jsresult = ctx->function->Call(ctx->function,args->arg_count-2, fargs);
 	} else {
 		jsresult = ctx->script->Run();
 	}
 
-	fprintf(stderr,"ASDASDADS - e8\n");
+	//jsresult = String::New("A");
 
-	// Convert the result to an ASCII string and print it.
 	String::Utf8Value res(jsresult);
-	fprintf(stderr,"ASDASDADS - e9\n");
 	strncpy(result,*res,res.length());
 	*length = res.length();
-
 
 	return result;
 }
