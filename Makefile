@@ -1,5 +1,5 @@
 all:
-	g++ -O0 -ggdb -shared -o udf_example.so udf_example.cpp -I/usr/include/mysql -L/data/home/v8-3.2.10.15 -lv8
+	g++ -O0 -ggdb -shared -o udf_example.so udf_example.cpp -I/usr/include/mysql -L/data/home/v8-3.2.10.15 -lv8 --std=c++0x
 
 install:
 	cp udf_example.so /usr/lib/mysql/plugin/
