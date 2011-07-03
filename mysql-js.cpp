@@ -1,30 +1,14 @@
-/* Copyright (C) 2002 MySQL AB
-
-   This program is free software; you can redistribute it and/or modify
-   it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; version 2 of the License.
-
-   This program is distributed in the hope that it will be useful,
-   but WITHOUT ANY WARRANTY; without even the implied warranty of
-   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-   GNU General Public License for more details.
-
-   You should have received a copy of the GNU General Public License
-   along with this program; if not, write to the Free Software
-   Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA */
-
-
+#define MYSQL_SERVER 1  
 #include <iostream>
 #include <vector>
 #include <my_global.h>
 #include <my_sys.h>
-#include <m_string.h>		//* To get strmov() *
+#include <m_string.h>
 #include <string.h>
 #include <mysql.h>
 #include <ctype.h>
 
-//#define MYSQL_SERVER 1  
-//#include <mysql_priv.h>
+#include <mysql_priv.h>
 
 extern "C" {
 	my_bool execute_js_init(UDF_INIT *initid, UDF_ARGS *args, char *message);
@@ -84,6 +68,9 @@ struct JsContext {
 	Persistent<Object> gobject;
 };
 
+#include "js_require.hpp"
+//#include "js_mysql.hpp"
+
 my_bool execute_js_init(UDF_INIT *initid, UDF_ARGS *args, char *message)
 {
 	if (args->arg_count < 1 || args->arg_type[0] != STRING_RESULT) {
@@ -108,16 +95,23 @@ my_bool execute_js_init(UDF_INIT *initid, UDF_ARGS *args, char *message)
 		HandleScope handle_scope;
 		//V8::GetCurrentThreadId();
 
-		ctx->context = Context::New();
+		Handle<ObjectTemplate> global = ObjectTemplate::New();
+		global->Set(v8::String::New("require"), ( v8::FunctionTemplate::New(jsRequire) ) );
+		//global->Set(v8::String::New("find"), ( v8::FunctionTemplate::New(jsFind) ) );
+		//Handle<Object> opts_obj = WrapMap(opts);
+
+		ctx->context = Context::New(NULL,global);
 		
 		Context::Scope context_scope(ctx->context);
 
-		Handle<String> source = String::New(args->args[0],args->lengths[0]);
+		Handle<v8::String> source = v8::String::New(args->args[0],args->lengths[0]);
 		ctx->script = Persistent<Script>::New( Script::New(source) );
+		ctx->gobject = Persistent<Object>::New( ctx->context->Global() );
+		//jsMysqlCreateObjects(ctx->context->Global());
+
 		if (args->arg_count>1) {
-			ctx->gobject = Persistent<Object>::New( ctx->context->Global() );
 			ctx->script->Run();
-			ctx->function = Persistent<Function>::New( Handle<Function>::Cast(ctx->gobject->Get(String::New(args->args[1],args->lengths[1]))) );
+			ctx->function = Persistent<Function>::New( Handle<Function>::Cast(ctx->gobject->Get(v8::String::New(args->args[1],args->lengths[1]))) );
 		}
 	}
 	return 0;
@@ -172,7 +166,7 @@ char *execute_js(UDF_INIT *initid __attribute__((unused)),
 	if (args->arg_count>1) {
 		Handle<Value> fargs[args->arg_count-2];
 		for (int i=2;i<args->arg_count;i++) {
-			fargs[i-2] = String::New(args->args[i],args->lengths[i]);
+			fargs[i-2] = v8::String::New(args->args[i],args->lengths[i]);
 		}
 		jsresult = ctx->function->Call(ctx->function,args->arg_count-2, fargs);
 	} else {
@@ -181,7 +175,7 @@ char *execute_js(UDF_INIT *initid __attribute__((unused)),
 
 	//jsresult = String::New("A");
 
-	String::Utf8Value res(jsresult);
+	v8::String::Utf8Value res(jsresult);
 	strncpy(result,*res,res.length());
 	*length = res.length();
 
