@@ -1,4 +1,4 @@
-introduction in Russian: http://habrahabr.ru/blogs/nosql/123311/
+introduction in Russian: http://habrahabr.ru/blogs/mysql/123311/
 
-![screenshot](http://i51.tinypic.com/9fmuyx.png)
+![screenshot](http://i.imgur.com/V2qtu.png)
 
